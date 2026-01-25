@@ -1,0 +1,627 @@
+module tests.advanced
+
+// ============================================
+// Advanced Brainfuck Interpreter Tests
+// Self-contained tests that duplicate necessary helpers
+// ============================================
+
+// --- Types (duplicated from brainfuck module) ---
+
+type Instruction =
+    | MoveRight
+    | MoveLeft
+    | Increment
+    | Decrement
+    | Output
+    | Input
+    | Loop(List[Instruction])
+
+type Program = List[Instruction]
+
+type State = {
+    tape: List[i32],
+    pointer: i32
+}
+
+// --- List Helpers ---
+
+fn list_get(lst: List[i32], idx: i32) -> i32 {
+    if idx < 0 {
+        return 0
+    }
+    if std.list.length(lst) == 0 {
+        return 0
+    }
+    match std.list.head(lst) {
+        Some(h) => {
+            if idx == 0 {
+                return h
+            }
+            match std.list.tail(lst) {
+                Some(t) => {
+                    return list_get(t, idx - 1)
+                }
+                None => {
+                    return 0
+                }
+            }
+        }
+        None => {
+            return 0
+        }
+    }
+}
+
+fn list_set(lst: List[i32], idx: i32, value: i32) -> List[i32] {
+    return list_set_helper(lst, idx, value, 0, std.list.empty())
+}
+
+fn list_set_helper(lst: List[i32], target_idx: i32, value: i32, current_idx: i32, acc: List[i32]) -> List[i32] {
+    if std.list.length(lst) == 0 {
+        return std.list.reverse(acc)
+    }
+    match std.list.head(lst) {
+        Some(h) => {
+            if current_idx == target_idx {
+                let new_acc: List[i32] = std.list.cons(value, acc)
+                match std.list.tail(lst) {
+                    Some(t) => {
+                        return list_set_helper(t, target_idx, value, current_idx + 1, new_acc)
+                    }
+                    None => {
+                        return std.list.reverse(new_acc)
+                    }
+                }
+            } else {
+                let new_acc: List[i32] = std.list.cons(h, acc)
+                match std.list.tail(lst) {
+                    Some(t) => {
+                        return list_set_helper(t, target_idx, value, current_idx + 1, new_acc)
+                    }
+                    None => {
+                        return std.list.reverse(new_acc)
+                    }
+                }
+            }
+        }
+        None => {
+            return std.list.reverse(acc)
+        }
+    }
+}
+
+// --- Tape Operations ---
+
+fn get_cell(state: State) -> i32 {
+    return list_get(state.tape, state.pointer)
+}
+
+fn set_cell(state: State, value: i32) -> State {
+    let new_tape: List[i32] = list_set(state.tape, state.pointer, value)
+    return State { tape: new_tape, pointer: state.pointer }
+}
+
+fn move_right(state: State) -> State {
+    let new_pointer: i32 = state.pointer + 1
+    if new_pointer >= std.list.length(state.tape) {
+        let expanded: List[i32] = std.list.concat(state.tape, std.list.singleton(0))
+        return State { tape: expanded, pointer: new_pointer }
+    }
+    return State { tape: state.tape, pointer: new_pointer }
+}
+
+fn move_left(state: State) -> State {
+    if state.pointer > 0 {
+        return State { tape: state.tape, pointer: state.pointer - 1 }
+    }
+    return State { tape: state.tape, pointer: 0 }
+}
+
+fn increment_cell(state: State) -> State {
+    let current: i32 = get_cell(state)
+    let new_val: i32 = (current + 1) % 256
+    return set_cell(state, new_val)
+}
+
+fn decrement_cell(state: State) -> State {
+    let current: i32 = get_cell(state)
+    if current == 0 {
+        return set_cell(state, 255)
+    }
+    return set_cell(state, current - 1)
+}
+
+fn initial_state() -> State {
+    return State { tape: std.list.singleton(0), pointer: 0 }
+}
+
+// --- Parser ---
+
+fn empty_instr_list() -> List[Instruction] {
+    return std.list.empty()
+}
+
+fn parse(source: string) -> Result[Program, string] {
+    let len: i32 = std.string.length(source)
+    match parse_at(source, 0, len, false) {
+        Ok((instructions, next_idx)) => {
+            return Ok(instructions)
+        }
+        Err(e) => {
+            return Err(e)
+        }
+    }
+}
+
+fn parse_at(source: string, idx: i32, len: i32, in_loop: bool) -> Result[(List[Instruction], i32), string] {
+    return parse_loop(source, idx, len, in_loop, empty_instr_list())
+}
+
+fn parse_loop(source: string, idx: i32, len: i32, in_loop: bool, acc: List[Instruction]) -> Result[(List[Instruction], i32), string] {
+    if idx >= len {
+        if in_loop {
+            return Err("Unclosed '[' - missing ']'")
+        }
+        return Ok((acc, idx))
+    }
+
+    match std.string.char_at(source, idx) {
+        Some(c) => {
+            match c {
+                '>' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(MoveRight)))
+                }
+                '<' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(MoveLeft)))
+                }
+                '+' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Increment)))
+                }
+                '-' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Decrement)))
+                }
+                '.' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Output)))
+                }
+                ',' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Input)))
+                }
+                '[' => {
+                    match parse_at(source, idx + 1, len, true) {
+                        Ok((loop_body, after_idx)) => {
+                            let instr: Instruction = Loop(loop_body)
+                            return parse_loop(source, after_idx, len, in_loop, std.list.concat(acc, std.list.singleton(instr)))
+                        }
+                        Err(e) => {
+                            return Err(e)
+                        }
+                    }
+                }
+                ']' => {
+                    if in_loop {
+                        return Ok((acc, idx + 1))
+                    } else {
+                        return Err("Unexpected ']' without matching '['")
+                    }
+                }
+                _ => {
+                    return parse_loop(source, idx + 1, len, in_loop, acc)
+                }
+            }
+        }
+        None => {
+            if in_loop {
+                return Err("Unclosed '[' - missing ']'")
+            }
+            return Ok((acc, idx))
+        }
+    }
+}
+
+// --- Interpreter (non-IO parts for testing) ---
+
+fn execute_non_io(state: State, instructions: List[Instruction]) -> State {
+    if std.list.length(instructions) == 0 {
+        return state
+    }
+    match std.list.head(instructions) {
+        Some(instr) => {
+            match std.list.tail(instructions) {
+                Some(rest) => {
+                    let new_state: State = execute_single(state, instr)
+                    return execute_non_io(new_state, rest)
+                }
+                None => {
+                    return execute_single(state, instr)
+                }
+            }
+        }
+        None => {
+            return state
+        }
+    }
+}
+
+fn execute_single(state: State, instr: Instruction) -> State {
+    match instr {
+        MoveRight => {
+            return move_right(state)
+        }
+        MoveLeft => {
+            return move_left(state)
+        }
+        Increment => {
+            return increment_cell(state)
+        }
+        Decrement => {
+            return decrement_cell(state)
+        }
+        Output => {
+            // Skip output in tests
+            return state
+        }
+        Input => {
+            // Skip input in tests, return 0
+            return set_cell(state, 0)
+        }
+        Loop(body) => {
+            return execute_loop_non_io(state, body)
+        }
+    }
+}
+
+fn execute_loop_non_io(state: State, body: List[Instruction]) -> State {
+    if get_cell(state) == 0 {
+        return state
+    }
+    let new_state: State = execute_non_io(state, body)
+    return execute_loop_non_io(new_state, body)
+}
+
+// --- ASCII Table ---
+
+fn ascii_table() -> string {
+    return "\0\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f"
+}
+
+fn code_to_char(code: i32) -> Option[char] {
+    let table: string = ascii_table()
+    return std.string.char_at(table, code)
+}
+
+fn char_to_i32(c: char) -> i32 {
+    let table: string = ascii_table()
+    let len: i32 = std.string.length(table)
+    return find_char_index(table, c, 0, len)
+}
+
+fn find_char_index(table: string, target: char, idx: i32, len: i32) -> i32 {
+    if idx >= len {
+        return 0
+    }
+    match std.string.char_at(table, idx) {
+        Some(c) => {
+            if c == target {
+                return idx
+            }
+            return find_char_index(table, target, idx + 1, len)
+        }
+        None => {
+            return 0
+        }
+    }
+}
+
+// ============================================
+// TEST 1: Deeply nested loop parsing (5 levels)
+// ============================================
+fn test_deeply_nested_loops() -> void {
+    std.io.println("Test 1: Deeply nested loop parsing...")
+    let source: string = "[[[[[+]]]]]"
+    match parse(source) {
+        Ok(program) => {
+            std.assert.assert_eq(std.list.length(program), 1)
+            std.io.println("  Parsed 5 levels of nested loops")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 2: Multiple sequential loops parsing
+// ============================================
+fn test_sequential_loops() -> void {
+    std.io.println("Test 2: Multiple sequential loops parsing...")
+    let source: string = "[+][++][+++]"
+    match parse(source) {
+        Ok(program) => {
+            std.assert.assert_eq(std.list.length(program), 3)
+            std.io.println("  Parsed 3 sequential loops")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 3: Parser error - unclosed bracket
+// ============================================
+fn test_unclosed_bracket_error() -> void {
+    std.io.println("Test 3: Parser error - unclosed bracket...")
+    let source: string = "++[>++[<]"
+    match parse(source) {
+        Ok(_) => {
+            std.assert.fail("Should have failed on unclosed bracket")
+        }
+        Err(e) => {
+            std.assert.assert_true(std.string.contains(e, "Unclosed"))
+            std.io.println("  Correctly detected unclosed bracket")
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 4: Parser error - unexpected close bracket
+// ============================================
+fn test_unexpected_close_bracket() -> void {
+    std.io.println("Test 4: Parser error - unexpected close bracket...")
+    let source: string = "++]>++"
+    match parse(source) {
+        Ok(_) => {
+            std.assert.fail("Should have failed on unexpected ]")
+        }
+        Err(e) => {
+            std.assert.assert_true(std.string.contains(e, "Unexpected"))
+            std.io.println("  Correctly detected unexpected ]")
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 5: Comments and whitespace ignored
+// ============================================
+fn test_comments_ignored() -> void {
+    std.io.println("Test 5: Comments and whitespace ignored...")
+    let source: string = "This is a comment + another comment + and more +"
+    match parse(source) {
+        Ok(program) => {
+            std.assert.assert_eq(std.list.length(program), 3)
+            std.io.println("  Correctly parsed 3 increments from commented code")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 6: Cell increment wrapping (255 -> 0)
+// ============================================
+fn test_increment_wrapping() -> void {
+    std.io.println("Test 6: Cell increment wrapping (255 -> 0)...")
+    let state: State = State { tape: std.list.singleton(255), pointer: 0 }
+    let new_state: State = increment_cell(state)
+    let value: i32 = get_cell(new_state)
+    std.assert.assert_eq(value, 0)
+    std.io.println("  255 + 1 = 0 (wrapped correctly)")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 7: Cell decrement wrapping (0 -> 255)
+// ============================================
+fn test_decrement_wrapping() -> void {
+    std.io.println("Test 7: Cell decrement wrapping (0 -> 255)...")
+    let state: State = State { tape: std.list.singleton(0), pointer: 0 }
+    let new_state: State = decrement_cell(state)
+    let value: i32 = get_cell(new_state)
+    std.assert.assert_eq(value, 255)
+    std.io.println("  0 - 1 = 255 (wrapped correctly)")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 8: Tape expansion on move right
+// ============================================
+fn test_tape_expansion() -> void {
+    std.io.println("Test 8: Tape expansion on move right...")
+    let state: State = initial_state()
+    std.assert.assert_eq(std.list.length(state.tape), 1)
+    let s1: State = move_right(state)
+    let s2: State = move_right(s1)
+    let s3: State = move_right(s2)
+    let s4: State = move_right(s3)
+    let s5: State = move_right(s4)
+    std.assert.assert_eq(s5.pointer, 5)
+    std.assert.assert_eq(std.list.length(s5.tape), 6)
+    std.io.println("  Tape expanded from 1 to 6 cells")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 9: Move left boundary (can't go below 0)
+// ============================================
+fn test_move_left_boundary() -> void {
+    std.io.println("Test 9: Move left boundary protection...")
+    let state: State = initial_state()
+    let s1: State = move_left(state)
+    std.assert.assert_eq(s1.pointer, 0)
+    let s2: State = move_left(s1)
+    std.assert.assert_eq(s2.pointer, 0)
+    std.io.println("  Pointer stays at 0 when moving left from 0")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 10: Complex list operations across indices
+// ============================================
+fn test_list_operations() -> void {
+    std.io.println("Test 10: Complex list operations...")
+    let t0: List[i32] = std.list.singleton(0)
+    let t1: List[i32] = std.list.concat(t0, std.list.singleton(0))
+    let t2: List[i32] = std.list.concat(t1, std.list.singleton(0))
+    let t3: List[i32] = std.list.concat(t2, std.list.singleton(0))
+    let t4: List[i32] = std.list.concat(t3, std.list.singleton(0))
+    std.assert.assert_eq(std.list.length(t4), 5)
+    let tape1: List[i32] = list_set(t4, 0, 10)
+    let tape2: List[i32] = list_set(tape1, 2, 20)
+    let tape3: List[i32] = list_set(tape2, 4, 30)
+    std.assert.assert_eq(list_get(tape3, 0), 10)
+    std.assert.assert_eq(list_get(tape3, 1), 0)
+    std.assert.assert_eq(list_get(tape3, 2), 20)
+    std.assert.assert_eq(list_get(tape3, 3), 0)
+    std.assert.assert_eq(list_get(tape3, 4), 30)
+    std.io.println("  Set and verified values at indices 0, 2, 4")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 11: Bounds checking (negative and overflow)
+// ============================================
+fn test_bounds_checking() -> void {
+    std.io.println("Test 11: Bounds checking...")
+    let tape: List[i32] = std.list.singleton(42)
+    std.assert.assert_eq(list_get(tape, -1), 0)
+    std.assert.assert_eq(list_get(tape, -100), 0)
+    std.assert.assert_eq(list_get(tape, 100), 0)
+    std.assert.assert_eq(list_get(tape, 0), 42)
+    std.io.println("  Negative and out-of-bounds access returns 0")
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 12: Execute simple addition (3+5=8)
+// ============================================
+fn test_execute_addition() -> void {
+    std.io.println("Test 12: Execute addition program (3+5=8)...")
+    // +++>+++++[<+>-]<
+    // Set cell 0 to 3, cell 1 to 5, add cell 1 to cell 0
+    let source: string = "+++>+++++[<+>-]<"
+    match parse(source) {
+        Ok(program) => {
+            let state: State = initial_state()
+            let final_state: State = execute_non_io(state, program)
+            let result: i32 = get_cell(final_state)
+            std.assert.assert_eq(result, 8)
+            std.io.println("  3 + 5 = 8 verified")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 13: Execute multiplication (3*4=12)
+// ============================================
+fn test_execute_multiplication() -> void {
+    std.io.println("Test 13: Execute multiplication program (3*4=12)...")
+    // Cell 0 = 3, Cell 1 = 4, multiply: +++>++++<[>[>+>+<<-]>>[<<+>>-]<<<-]>>
+    // Simpler: cell0=3, cell1=4, result in cell2
+    // +++>++++[<[>>+>+<<<-]>>>[<<<+>>>-]<<-]>>
+    // Actually simplest multiplication: 3*4
+    // Set cell0=3, cell1=4, clear cell0 while adding cell1 to cell2 (3 times)
+    let source: string = "+++>++++<[>[>+>+<<-]>>[<<+>>-]<<<-]>>"
+    match parse(source) {
+        Ok(program) => {
+            let state: State = initial_state()
+            let final_state: State = execute_non_io(state, program)
+            let result: i32 = get_cell(final_state)
+            std.assert.assert_eq(result, 12)
+            std.io.println("  3 * 4 = 12 verified")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 14: Skip loop when cell is zero
+// ============================================
+fn test_skip_zero_loop() -> void {
+    std.io.println("Test 14: Skip loop when cell is zero...")
+    // Loop should be skipped because initial cell is 0
+    // [+++] should not execute, then +++ should give 3
+    let source: string = "[+++]+++"
+    match parse(source) {
+        Ok(program) => {
+            let state: State = initial_state()
+            let final_state: State = execute_non_io(state, program)
+            let result: i32 = get_cell(final_state)
+            std.assert.assert_eq(result, 3)
+            std.io.println("  Loop skipped, got 3 (not 6)")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// TEST 15: Complex nested loop - clear multiple cells
+// ============================================
+fn test_nested_loop_clear() -> void {
+    std.io.println("Test 15: Complex nested loop - clear cells...")
+    // Set up: cell0=5, cell1=3, cell2=7
+    // Then clear all with nested loops
+    // +++++>+++>+++++++<<<[[-]>]
+    let source: string = "+++++>+++>+++++++<<<[>]<[[-]<]"
+    match parse(source) {
+        Ok(program) => {
+            let state: State = initial_state()
+            let final_state: State = execute_non_io(state, program)
+            // After clearing, all cells should be 0
+            std.assert.assert_eq(list_get(final_state.tape, 0), 0)
+            std.assert.assert_eq(list_get(final_state.tape, 1), 0)
+            std.assert.assert_eq(list_get(final_state.tape, 2), 0)
+            std.io.println("  All 3 cells cleared to 0")
+        }
+        Err(e) => {
+            std.assert.fail("Parse failed: " + e)
+        }
+    }
+    std.io.println("  PASS")
+}
+
+// ============================================
+// Main test runner
+// ============================================
+fn main() -> void {
+    std.io.println("========================================")
+    std.io.println("Running Advanced Brainfuck Tests (15)")
+    std.io.println("========================================")
+    std.io.println("")
+
+    test_deeply_nested_loops()
+    test_sequential_loops()
+    test_unclosed_bracket_error()
+    test_unexpected_close_bracket()
+    test_comments_ignored()
+    test_increment_wrapping()
+    test_decrement_wrapping()
+    test_tape_expansion()
+    test_move_left_boundary()
+    test_list_operations()
+    test_bounds_checking()
+    test_execute_addition()
+    test_execute_multiplication()
+    test_skip_zero_loop()
+    test_nested_loop_clear()
+
+    std.io.println("")
+    std.io.println("========================================")
+    std.io.println("All 15 advanced tests passed!")
+    std.io.println("========================================")
+}
