@@ -1,0 +1,72 @@
+module tests.basic
+
+// Basic Brainfuck interpreter tests
+
+// Test list operations
+fn test_list_ops() -> void {
+    let lst: List[i32] = std.list.singleton(42)
+    std.assert.assert_eq(std.list.length(lst), 1)
+
+    match std.list.head(lst) {
+        Some(h) => {
+            std.assert.assert_eq(h, 42)
+        }
+        None => {
+            std.assert.fail("Expected Some, got None")
+        }
+    }
+    std.io.println("test_list_ops: PASS")
+}
+
+// Test basic parsing
+fn test_parse_simple() -> void {
+    // Test that string operations work
+    let source: string = "+++"
+    std.assert.assert_eq(std.string.length(source), 3)
+
+    match std.string.char_at(source, 0) {
+        Some(c) => {
+            std.assert.assert_true(c == '+')
+        }
+        None => {
+            std.assert.fail("Expected char at index 0")
+        }
+    }
+    std.io.println("test_parse_simple: PASS")
+}
+
+// Test ASCII table lookup
+fn ascii_table() -> string {
+    return "\0\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f"
+}
+
+fn test_ascii_lookup() -> void {
+    let table: string = ascii_table()
+    // 'H' = 72
+    match std.string.char_at(table, 72) {
+        Some(c) => {
+            std.assert.assert_true(c == 'H')
+        }
+        None => {
+            std.assert.fail("Expected 'H' at index 72")
+        }
+    }
+    // 'i' = 105
+    match std.string.char_at(table, 105) {
+        Some(c) => {
+            std.assert.assert_true(c == 'i')
+        }
+        None => {
+            std.assert.fail("Expected 'i' at index 105")
+        }
+    }
+    std.io.println("test_ascii_lookup: PASS")
+}
+
+fn main() -> void {
+    std.io.println("Running basic tests...")
+    test_list_ops()
+    test_parse_simple()
+    test_ascii_lookup()
+    std.io.println("All basic tests passed!")
+}

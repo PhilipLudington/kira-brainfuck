@@ -1,0 +1,400 @@
+module brainfuck
+
+// ============================================
+// Types
+// ============================================
+
+type Instruction =
+    | MoveRight
+    | MoveLeft
+    | Increment
+    | Decrement
+    | Output
+    | Input
+    | Loop(List[Instruction])
+
+type Program = List[Instruction]
+
+// Use i32 for cells to avoid u8 type issues
+type State = {
+    tape: List[i32],
+    pointer: i32
+}
+
+// ============================================
+// List Helpers (avoiding drop/take which seem buggy)
+// ============================================
+
+fn empty_list() -> List[i32] {
+    return std.list.empty()
+}
+
+fn singleton_i32(v: i32) -> List[i32] {
+    return std.list.singleton(v)
+}
+
+fn empty_instr_list() -> List[Instruction] {
+    return std.list.empty()
+}
+
+// Get element at index using recursive approach
+fn list_get(lst: List[i32], idx: i32) -> i32 {
+    if idx < 0 {
+        return 0
+    }
+    if std.list.length(lst) == 0 {
+        return 0
+    }
+    match std.list.head(lst) {
+        Some(h) => {
+            if idx == 0 {
+                return h
+            }
+            match std.list.tail(lst) {
+                Some(t) => {
+                    return list_get(t, idx - 1)
+                }
+                None => {
+                    return 0
+                }
+            }
+        }
+        None => {
+            return 0
+        }
+    }
+}
+
+// Set element at index using recursive rebuild
+fn list_set(lst: List[i32], idx: i32, value: i32) -> List[i32] {
+    return list_set_helper(lst, idx, value, 0, std.list.empty())
+}
+
+fn list_set_helper(lst: List[i32], target_idx: i32, value: i32, current_idx: i32, acc: List[i32]) -> List[i32] {
+    if std.list.length(lst) == 0 {
+        return std.list.reverse(acc)
+    }
+    match std.list.head(lst) {
+        Some(h) => {
+            if current_idx == target_idx {
+                let new_acc: List[i32] = std.list.cons(value, acc)
+                match std.list.tail(lst) {
+                    Some(t) => {
+                        return list_set_helper(t, target_idx, value, current_idx + 1, new_acc)
+                    }
+                    None => {
+                        return std.list.reverse(new_acc)
+                    }
+                }
+            } else {
+                let new_acc: List[i32] = std.list.cons(h, acc)
+                match std.list.tail(lst) {
+                    Some(t) => {
+                        return list_set_helper(t, target_idx, value, current_idx + 1, new_acc)
+                    }
+                    None => {
+                        return std.list.reverse(new_acc)
+                    }
+                }
+            }
+        }
+        None => {
+            return std.list.reverse(acc)
+        }
+    }
+}
+
+// ============================================
+// Tape Operations
+// ============================================
+
+fn get_cell(state: State) -> i32 {
+    return list_get(state.tape, state.pointer)
+}
+
+fn set_cell(state: State, value: i32) -> State {
+    let new_tape: List[i32] = list_set(state.tape, state.pointer, value)
+    return State { tape: new_tape, pointer: state.pointer }
+}
+
+fn move_right(state: State) -> State {
+    let new_pointer: i32 = state.pointer + 1
+    if new_pointer >= std.list.length(state.tape) {
+        let expanded: List[i32] = std.list.concat(state.tape, singleton_i32(0))
+        return State { tape: expanded, pointer: new_pointer }
+    }
+    return State { tape: state.tape, pointer: new_pointer }
+}
+
+fn move_left(state: State) -> State {
+    if state.pointer > 0 {
+        return State { tape: state.tape, pointer: state.pointer - 1 }
+    }
+    return State { tape: state.tape, pointer: 0 }
+}
+
+fn increment_cell(state: State) -> State {
+    let current: i32 = get_cell(state)
+    let new_val: i32 = (current + 1) % 256
+    return set_cell(state, new_val)
+}
+
+fn decrement_cell(state: State) -> State {
+    let current: i32 = get_cell(state)
+    if current == 0 {
+        return set_cell(state, 255)
+    }
+    return set_cell(state, current - 1)
+}
+
+fn initial_state() -> State {
+    return State { tape: singleton_i32(0), pointer: 0 }
+}
+
+// ============================================
+// Parser (using string indices)
+// ============================================
+
+fn parse(source: string) -> Result[Program, string] {
+    let len: i32 = std.string.length(source)
+    match parse_at(source, 0, len, false) {
+        Ok((instructions, next_idx)) => {
+            return Ok(instructions)
+        }
+        Err(e) => {
+            return Err(e)
+        }
+    }
+}
+
+fn parse_at(source: string, idx: i32, len: i32, in_loop: bool) -> Result[(List[Instruction], i32), string] {
+    return parse_loop(source, idx, len, in_loop, empty_instr_list())
+}
+
+fn parse_loop(source: string, idx: i32, len: i32, in_loop: bool, acc: List[Instruction]) -> Result[(List[Instruction], i32), string] {
+    if idx >= len {
+        if in_loop {
+            return Err("Unclosed '[' - missing ']'")
+        }
+        return Ok((acc, idx))
+    }
+
+    match std.string.char_at(source, idx) {
+        Some(c) => {
+            match c {
+                '>' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(MoveRight)))
+                }
+                '<' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(MoveLeft)))
+                }
+                '+' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Increment)))
+                }
+                '-' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Decrement)))
+                }
+                '.' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Output)))
+                }
+                ',' => {
+                    return parse_loop(source, idx + 1, len, in_loop, std.list.concat(acc, std.list.singleton(Input)))
+                }
+                '[' => {
+                    match parse_at(source, idx + 1, len, true) {
+                        Ok((loop_body, after_idx)) => {
+                            let instr: Instruction = Loop(loop_body)
+                            return parse_loop(source, after_idx, len, in_loop, std.list.concat(acc, std.list.singleton(instr)))
+                        }
+                        Err(e) => {
+                            return Err(e)
+                        }
+                    }
+                }
+                ']' => {
+                    if in_loop {
+                        return Ok((acc, idx + 1))
+                    } else {
+                        return Err("Unexpected ']' without matching '['")
+                    }
+                }
+                _ => {
+                    return parse_loop(source, idx + 1, len, in_loop, acc)
+                }
+            }
+        }
+        None => {
+            if in_loop {
+                return Err("Unclosed '[' - missing ']'")
+            }
+            return Ok((acc, idx))
+        }
+    }
+}
+
+// ============================================
+// Interpreter
+// ============================================
+
+fn ascii_table() -> string {
+    return "\0\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f"
+}
+
+fn code_to_char(code: i32) -> Option[char] {
+    let table: string = ascii_table()
+    return std.string.char_at(table, code)
+}
+
+effect fn print_cell(code: i32) -> IO[void] {
+    match code_to_char(code) {
+        Some(c) => {
+            std.io.print(c)
+        }
+        None => {
+            // Non-printable or out of range
+        }
+    }
+}
+
+fn char_to_i32(c: char) -> i32 {
+    let table: string = ascii_table()
+    let len: i32 = std.string.length(table)
+    return find_char_index(table, c, 0, len)
+}
+
+fn find_char_index(table: string, target: char, idx: i32, len: i32) -> i32 {
+    if idx >= len {
+        return 0
+    }
+    match std.string.char_at(table, idx) {
+        Some(c) => {
+            if c == target {
+                return idx
+            }
+            return find_char_index(table, target, idx + 1, len)
+        }
+        None => {
+            return 0
+        }
+    }
+}
+
+effect fn read_input() -> IO[i32] {
+    match std.io.read_line() {
+        Ok(line) => {
+            if std.string.length(line) > 0 {
+                match std.string.char_at(line, 0) {
+                    Some(c) => {
+                        return char_to_i32(c)
+                    }
+                    None => {
+                        return 0
+                    }
+                }
+            }
+            return 0
+        }
+        Err(_) => {
+            return 0
+        }
+    }
+}
+
+effect fn execute_instruction(state: State, instr: Instruction) -> IO[State] {
+    match instr {
+        MoveRight => {
+            return move_right(state)
+        }
+        MoveLeft => {
+            return move_left(state)
+        }
+        Increment => {
+            return increment_cell(state)
+        }
+        Decrement => {
+            return decrement_cell(state)
+        }
+        Output => {
+            let cell: i32 = get_cell(state)
+            print_cell(cell)
+            return state
+        }
+        Input => {
+            let value: i32 = read_input()
+            return set_cell(state, value)
+        }
+        Loop(body) => {
+            return execute_loop(state, body)
+        }
+    }
+}
+
+effect fn execute_loop(state: State, body: List[Instruction]) -> IO[State] {
+    if get_cell(state) == 0 {
+        return state
+    }
+    let new_state: State = execute_instructions(state, body)
+    return execute_loop(new_state, body)
+}
+
+effect fn execute_instructions(state: State, instructions: List[Instruction]) -> IO[State] {
+    if std.list.length(instructions) == 0 {
+        return state
+    }
+    match std.list.head(instructions) {
+        Some(instr) => {
+            match std.list.tail(instructions) {
+                Some(rest) => {
+                    let new_state: State = execute_instruction(state, instr)
+                    return execute_instructions(new_state, rest)
+                }
+                None => {
+                    return execute_instruction(state, instr)
+                }
+            }
+        }
+        None => {
+            return state
+        }
+    }
+}
+
+effect fn run(state: State, program: Program) -> IO[State] {
+    return execute_instructions(state, program)
+}
+
+// ============================================
+// Main
+// ============================================
+
+effect fn read_stdin_all() -> IO[string] {
+    return read_lines_loop("")
+}
+
+effect fn read_lines_loop(acc: string) -> IO[string] {
+    match std.io.read_line() {
+        Ok(line) => {
+            if std.string.length(line) == 0 {
+                return acc
+            }
+            return read_lines_loop(acc + line + "\n")
+        }
+        Err(_) => {
+            return acc
+        }
+    }
+}
+
+effect fn main() -> IO[void] {
+    let source: string = read_stdin_all()
+
+    match parse(source) {
+        Ok(program) => {
+            let state: State = initial_state()
+            run(state, program)
+        }
+        Err(error) => {
+            std.io.eprintln("Parse error: " + error)
+        }
+    }
+}
