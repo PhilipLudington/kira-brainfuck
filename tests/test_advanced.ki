@@ -141,7 +141,7 @@ fn empty_instr_list() -> List[Instruction] {
     return std.list.empty()
 }
 
-fn parse(source: string) -> Result[Program, string] {
+fn parse(source: string) -> Result[List[Instruction], string] {
     let len: i32 = std.string.length(source)
     match parse_at(source, 0, len, false) {
         Ok((instructions, next_idx)) => {
@@ -315,7 +315,7 @@ fn find_char_index(table: string, target: char, idx: i32, len: i32) -> i32 {
 // ============================================
 // TEST 1: Deeply nested loop parsing (5 levels)
 // ============================================
-fn test_deeply_nested_loops() -> void {
+effect fn test_deeply_nested_loops() -> void {
     std.io.println("Test 1: Deeply nested loop parsing...")
     let source: string = "[[[[[+]]]]]"
     match parse(source) {
@@ -333,7 +333,7 @@ fn test_deeply_nested_loops() -> void {
 // ============================================
 // TEST 2: Multiple sequential loops parsing
 // ============================================
-fn test_sequential_loops() -> void {
+effect fn test_sequential_loops() -> void {
     std.io.println("Test 2: Multiple sequential loops parsing...")
     let source: string = "[+][++][+++]"
     match parse(source) {
@@ -351,7 +351,7 @@ fn test_sequential_loops() -> void {
 // ============================================
 // TEST 3: Parser error - unclosed bracket
 // ============================================
-fn test_unclosed_bracket_error() -> void {
+effect fn test_unclosed_bracket_error() -> void {
     std.io.println("Test 3: Parser error - unclosed bracket...")
     let source: string = "++[>++[<]"
     match parse(source) {
@@ -369,7 +369,7 @@ fn test_unclosed_bracket_error() -> void {
 // ============================================
 // TEST 4: Parser error - unexpected close bracket
 // ============================================
-fn test_unexpected_close_bracket() -> void {
+effect fn test_unexpected_close_bracket() -> void {
     std.io.println("Test 4: Parser error - unexpected close bracket...")
     let source: string = "++]>++"
     match parse(source) {
@@ -387,7 +387,7 @@ fn test_unexpected_close_bracket() -> void {
 // ============================================
 // TEST 5: Comments and whitespace ignored
 // ============================================
-fn test_comments_ignored() -> void {
+effect fn test_comments_ignored() -> void {
     std.io.println("Test 5: Comments and whitespace ignored...")
     let source: string = "This is a comment + another comment + and more +"
     match parse(source) {
@@ -405,7 +405,7 @@ fn test_comments_ignored() -> void {
 // ============================================
 // TEST 6: Cell increment wrapping (255 -> 0)
 // ============================================
-fn test_increment_wrapping() -> void {
+effect fn test_increment_wrapping() -> void {
     std.io.println("Test 6: Cell increment wrapping (255 -> 0)...")
     let state: State = State { tape: std.list.singleton(255), pointer: 0 }
     let new_state: State = increment_cell(state)
@@ -418,7 +418,7 @@ fn test_increment_wrapping() -> void {
 // ============================================
 // TEST 7: Cell decrement wrapping (0 -> 255)
 // ============================================
-fn test_decrement_wrapping() -> void {
+effect fn test_decrement_wrapping() -> void {
     std.io.println("Test 7: Cell decrement wrapping (0 -> 255)...")
     let state: State = State { tape: std.list.singleton(0), pointer: 0 }
     let new_state: State = decrement_cell(state)
@@ -431,7 +431,7 @@ fn test_decrement_wrapping() -> void {
 // ============================================
 // TEST 8: Tape expansion on move right
 // ============================================
-fn test_tape_expansion() -> void {
+effect fn test_tape_expansion() -> void {
     std.io.println("Test 8: Tape expansion on move right...")
     let state: State = initial_state()
     std.assert.assert_eq(std.list.length(state.tape), 1)
@@ -449,7 +449,7 @@ fn test_tape_expansion() -> void {
 // ============================================
 // TEST 9: Move left boundary (can't go below 0)
 // ============================================
-fn test_move_left_boundary() -> void {
+effect fn test_move_left_boundary() -> void {
     std.io.println("Test 9: Move left boundary protection...")
     let state: State = initial_state()
     let s1: State = move_left(state)
@@ -463,7 +463,7 @@ fn test_move_left_boundary() -> void {
 // ============================================
 // TEST 10: Complex list operations across indices
 // ============================================
-fn test_list_operations() -> void {
+effect fn test_list_operations() -> void {
     std.io.println("Test 10: Complex list operations...")
     let t0: List[i32] = std.list.singleton(0)
     let t1: List[i32] = std.list.concat(t0, std.list.singleton(0))
@@ -486,7 +486,7 @@ fn test_list_operations() -> void {
 // ============================================
 // TEST 11: Bounds checking (negative and overflow)
 // ============================================
-fn test_bounds_checking() -> void {
+effect fn test_bounds_checking() -> void {
     std.io.println("Test 11: Bounds checking...")
     let tape: List[i32] = std.list.singleton(42)
     std.assert.assert_eq(list_get(tape, -1), 0)
@@ -500,7 +500,7 @@ fn test_bounds_checking() -> void {
 // ============================================
 // TEST 12: Execute simple addition (3+5=8)
 // ============================================
-fn test_execute_addition() -> void {
+effect fn test_execute_addition() -> void {
     std.io.println("Test 12: Execute addition program (3+5=8)...")
     // +++>+++++[<+>-]<
     // Set cell 0 to 3, cell 1 to 5, add cell 1 to cell 0
@@ -523,7 +523,7 @@ fn test_execute_addition() -> void {
 // ============================================
 // TEST 13: Execute multiplication (3*4=12)
 // ============================================
-fn test_execute_multiplication() -> void {
+effect fn test_execute_multiplication() -> void {
     std.io.println("Test 13: Execute multiplication program (3*4=12)...")
     // Cell 0 = 3, Cell 1 = 4, multiply: +++>++++<[>[>+>+<<-]>>[<<+>>-]<<<-]>>
     // Simpler: cell0=3, cell1=4, result in cell2
@@ -549,7 +549,7 @@ fn test_execute_multiplication() -> void {
 // ============================================
 // TEST 14: Skip loop when cell is zero
 // ============================================
-fn test_skip_zero_loop() -> void {
+effect fn test_skip_zero_loop() -> void {
     std.io.println("Test 14: Skip loop when cell is zero...")
     // Loop should be skipped because initial cell is 0
     // [+++] should not execute, then +++ should give 3
@@ -572,7 +572,7 @@ fn test_skip_zero_loop() -> void {
 // ============================================
 // TEST 15: Complex nested loop - clear multiple cells
 // ============================================
-fn test_nested_loop_clear() -> void {
+effect fn test_nested_loop_clear() -> void {
     std.io.println("Test 15: Complex nested loop - clear cells...")
     // Set up: cell0=5, cell1=3, cell2=7
     // Then clear all with nested loops
@@ -598,7 +598,7 @@ fn test_nested_loop_clear() -> void {
 // ============================================
 // Main test runner
 // ============================================
-fn main() -> void {
+effect fn main() -> void {
     std.io.println("========================================")
     std.io.println("Running Advanced Brainfuck Tests (15)")
     std.io.println("========================================")

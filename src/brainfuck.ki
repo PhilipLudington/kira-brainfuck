@@ -155,7 +155,7 @@ fn initial_state() -> State {
 // Parser (using string indices)
 // ============================================
 
-fn parse(source: string) -> Result[Program, string] {
+fn parse(source: string) -> Result[List[Instruction], string] {
     let len: i32 = std.string.length(source)
     match parse_at(source, 0, len, false) {
         Ok((instructions, next_idx)) => {
@@ -245,7 +245,7 @@ fn code_to_char(code: i32) -> Option[char] {
     return std.string.char_at(table, code)
 }
 
-effect fn print_cell(code: i32) -> IO[void] {
+effect fn print_cell(code: i32) -> void {
     match code_to_char(code) {
         Some(c) => {
             std.io.print(c)
@@ -279,7 +279,7 @@ fn find_char_index(table: string, target: char, idx: i32, len: i32) -> i32 {
     }
 }
 
-effect fn read_input() -> IO[i32] {
+effect fn read_input() -> i32 {
     match std.io.read_line() {
         Ok(line) => {
             if std.string.length(line) > 0 {
@@ -300,7 +300,7 @@ effect fn read_input() -> IO[i32] {
     }
 }
 
-effect fn execute_instruction(state: State, instr: Instruction) -> IO[State] {
+effect fn execute_instruction(state: State, instr: Instruction) -> State {
     match instr {
         MoveRight => {
             return move_right(state)
@@ -329,7 +329,7 @@ effect fn execute_instruction(state: State, instr: Instruction) -> IO[State] {
     }
 }
 
-effect fn execute_loop(state: State, body: List[Instruction]) -> IO[State] {
+effect fn execute_loop(state: State, body: List[Instruction]) -> State {
     if get_cell(state) == 0 {
         return state
     }
@@ -337,7 +337,7 @@ effect fn execute_loop(state: State, body: List[Instruction]) -> IO[State] {
     return execute_loop(new_state, body)
 }
 
-effect fn execute_instructions(state: State, instructions: List[Instruction]) -> IO[State] {
+effect fn execute_instructions(state: State, instructions: List[Instruction]) -> State {
     if std.list.length(instructions) == 0 {
         return state
     }
@@ -359,7 +359,7 @@ effect fn execute_instructions(state: State, instructions: List[Instruction]) ->
     }
 }
 
-effect fn run(state: State, program: Program) -> IO[State] {
+effect fn run(state: State, program: Program) -> State {
     return execute_instructions(state, program)
 }
 
@@ -367,11 +367,11 @@ effect fn run(state: State, program: Program) -> IO[State] {
 // Main
 // ============================================
 
-effect fn read_stdin_all() -> IO[string] {
+effect fn read_stdin_all() -> string {
     return read_lines_loop("")
 }
 
-effect fn read_lines_loop(acc: string) -> IO[string] {
+effect fn read_lines_loop(acc: string) -> string {
     match std.io.read_line() {
         Ok(line) => {
             if std.string.length(line) == 0 {
@@ -385,7 +385,7 @@ effect fn read_lines_loop(acc: string) -> IO[string] {
     }
 }
 
-effect fn main() -> IO[void] {
+effect fn main() -> void {
     let source: string = read_stdin_all()
 
     match parse(source) {
