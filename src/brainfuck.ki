@@ -152,11 +152,26 @@ fn initial_state() -> State {
 }
 
 // ============================================
+// String length helper (std.string.length returns i64)
+// ============================================
+
+fn string_len(s: string) -> i32 {
+    return count_chars(s, 0)
+}
+
+fn count_chars(s: string, idx: i32) -> i32 {
+    match std.string.char_at(s, idx) {
+        Some(_) => { return count_chars(s, idx + 1) }
+        None => { return idx }
+    }
+}
+
+// ============================================
 // Parser (using string indices)
 // ============================================
 
 fn parse(source: string) -> Result[List[Instruction], string] {
-    let len: i32 = std.string.length(source)
+    let len: i32 = string_len(source)
     match parse_at(source, 0, len, false) {
         Ok((instructions, next_idx)) => {
             return Ok(instructions)
@@ -258,7 +273,7 @@ effect fn print_cell(code: i32) -> void {
 
 fn char_to_i32(c: char) -> i32 {
     let table: string = ascii_table()
-    let len: i32 = std.string.length(table)
+    let len: i32 = string_len(table)
     return find_char_index(table, c, 0, len)
 }
 
